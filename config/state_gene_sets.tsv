@@ -1,0 +1,11 @@
+state_name	positive_markers	interpretation_guardrail
+Activation	Fos;Jun;Junb;Egr1;Egr2;Myc;Hes1;Notch1;Myod1	Immediate-early stress alone is insufficient; require MuSC identity and temporal ordering
+Proliferation	Mki67;Top2a;Pcna;Cdk1;Ccnb1;Ccnb2;Mcm2;Mcm5	Score describes cycling and is not a lineage transition
+Migration	Vim;Vcl;Ptk2;Rac1;Cdc42;Itgb1;Cxcr4;Mmp14	Require repair-front spatial or directional evidence for migration claims
+Commitment	Myod1;Myog;Mef2c;Cdkn1c;Des;Tnnt2;Tnni1	Transient Myod1 expression alone is insufficient
+Fusion	Mymk;Mymx;Myog;Myh3;Myh8;Tmem8c;Ckm	Require myogenic identity and fusion-zone or myonuclear evidence
+Remodeling	Mmp2;Mmp9;Mmp14;Timp1;Timp2;Col3a1;Fn1;Vegfa	Acute ECM expression is not automatically pathological
+Resolution	Mertk;Axl;Marco;Cd163;Il10;Trem2;Lpl;Apoe	M2-like markers alone do not establish functional resolution
+Fibrotic_deviation	Col1a1;Col1a2;Col3a1;Postn;Ctgf;Tgfb1;Serpine1;Lox;Acta2	Require persistence late in time and pathology or spatial evidence
+Adipogenic_deviation	Pparg;Cebpa;Cebpb;Fabp4;Adipoq;Plin1;Lpl;Cd36	Lipid metabolism alone is insufficient; require commitment or fatty-infiltration evidence
+Failed_regeneration	Cdkn1a;Cdkn2a;Trp53;Gadd45a;Serpine1;Il6;Socs3;Atf3	Requires late non-recovery context and cannot be assigned from early injury severity

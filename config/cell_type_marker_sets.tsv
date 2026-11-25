@@ -1,0 +1,18 @@
+cell_type	positive_markers	negative_or_exclusion_markers	evidence_scope
+MuSC	Pax7;Cdh15;Vcam1;Itga7;Calcr;Spry1;Myf5	Pecam1;Ptprc;Pdgfra;Rgs5	muscle stem and satellite cells
+Myogenic_progenitor	Myod1;Myf5;Des;Msc;Cdkn1c;Myog	Pecam1;Ptprc;Pdgfra	activated proliferating or differentiating myogenic cells
+Myonucleus	Myh1;Myh2;Myh4;Myh7;Ttn;Actn2;Ckm	Ptprc;Pecam1;Pdgfra	mature myofiber nuclei; expected mainly in snRNA
+FAP	Pdgfra;Dcn;Lum;Col1a1;Col1a2;Pi16;Dpp4	Pax7;Pecam1;Ptprc	fibro-adipogenic and mesenchymal progenitors
+Endothelial	Pecam1;Cdh5;Kdr;Emcn;Klf2;Rgcc	Ptprc;Pax7;Pdgfra	blood vascular endothelial cells
+Lymphatic_endothelial	Prox1;Lyve1;Pdpn;Flt4;Ccl21a	Ptprc;Pax7	lymphatic endothelial cells
+Pericyte	Rgs5;Cspg4;Pdgfrb;Notch3;Mcam;Des	Ptprc;Pecam1;Pax7	mural and perivascular cells
+Smooth_muscle	Acta2;Tagln;Myh11;Cnn1;Myl9	Ptprc;Pax7	vascular smooth muscle cells
+Macrophage	Adgre1;C1qa;C1qb;C1qc;Lyz2;Cd68	Ly6g;Cd3d;Cd79a	monocytes and macrophages
+Neutrophil	S100a8;S100a9;Ly6g;Csf3r;Mpo;Retnlg	C1qa;Cd3d;Cd79a	neutrophils
+Dendritic	Flt3;Itgax;H2-Ab1;Clec10a;Cd74	Cd3d;Cd79a;Pax7	dendritic and antigen-presenting myeloid cells
+T_cell	Cd3d;Cd3e;Trbc1;Trbc2;Lck;Il7r	Cd79a;Adgre1;Pecam1	T lymphocytes
+B_cell	Cd79a;Ms4a1;Cd74;Cd37;H2-Aa	Cd3d;Adgre1;Pecam1	B lymphocytes
+Mast_cell	Kit;Cpa3;Mcpt4;Gata2;Ms4a2	Pecam1;Pax7	mast cells
+Schwann	Sox10;S100b;Plp1;Mpz;Ngfr;Gfap	Ptprc;Pecam1;Pdgfra	Schwann and terminal glial cells
+Neural	Chat;Slc18a3;Mnx1;Isl1;Tubb3;Nefl;Nefm	Ptprc;Pecam1;Pdgfra	neuronal or motor-neural material; require spatial confirmation
+Tenocyte	Scx;Tnmd;Mkx;Col12a1;Thbs4	Ptprc;Pecam1;Pax7	tendon and myotendinous cells

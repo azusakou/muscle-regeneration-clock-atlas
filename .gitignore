@@ -1,0 +1,7 @@
+results/
+figures/
+data/
+.Rhistory
+.RData
+.DS_Store
+*.log

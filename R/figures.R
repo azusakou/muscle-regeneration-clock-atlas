@@ -5,7 +5,11 @@ theme_set(theme_classic(base_size=8,base_family="Helvetica")+
  theme(plot.title=element_text(size=9,face="bold"),plot.tag=element_text(face="bold",size=11),
   strip.background=element_blank(),strip.text=element_text(face="bold",size=8),
   legend.title=element_blank(),axis.text=element_text(colour="black",size=7)))
-savefig<-function(p,name,w=7.2,h=5)ggsave(file.path(fig,paste0(name,".pdf")),p,width=w,height=h,device=pdf,useDingbats=FALSE)
+pdf_device<-function(filename,width,height,...) {
+ if(capabilities("aqua")) quartz(type="pdf",file=filename,width=width,height=height,family="Helvetica")
+ else cairo_pdf(filename=filename,width=width,height=height,family="Helvetica")
+}
+savefig<-function(p,name,w=7.2,h=5)ggsave(file.path(fig,paste0(name,".pdf")),p,width=w,height=h,device=pdf_device)
 ages<-c(young="#376B91",old="#C49A48",geriatric="#BA6048")
 a<-fread(file.path(res,"age_RSI_biological_units.tsv"));a[,age_class:=factor(age_class,names(ages))]
 means<-a[,.(RSI=mean(RSI),n=.N),by=.(age_class,time_days)]
@@ -92,7 +96,7 @@ hp<-ggplot(human,aes(coarse_cell_type,reorder(donor,as.integer(gsub("HM","",dono
 savefig(hp,"SupplementaryFigure3",h=4.8)
 
 # Schematic: programme positions are illustrative, not inferred timings.
-pdf(file.path(fig,"Figure8_model.pdf"),width=7.2,height=6.5,family="Helvetica",useDingbats=FALSE)
+pdf_device(file.path(fig,"Figure8_model.pdf"),width=7.2,height=6.5)
 grid.newpage()
 txt<-function(x,y,label,size=8,font=1,just="left",col="#20252C")grid.text(label,x,y,just=just,gp=gpar(fontsize=size,fontface=font,col=col))
 box<-function(x,y,w,h,label,fill="#EDF2F6",size=7.8,col="#617A8D"){
@@ -171,7 +175,7 @@ divscale <- function(lim, name) scale_fill_gradient2(low=blue,mid='#F5F5F3',high
   guide=guide_colourbar(barwidth=unit(23,'mm'),barheight=unit(2,'mm'),title.position='top'))
 savefig <- function(p, stem, height=155, width=183){
  p<-p+plot_annotation(tag_levels='a') & theme(plot.tag=element_text(face='bold',size=8))
- grDevices::pdf(file.path(out,paste0(stem,'.pdf')),width=width/25.4,height=height/25.4,family='Helvetica',useDingbats=FALSE)
+ pdf_device(file.path(out,paste0(stem,'.pdf')),width=width/25.4,height=height/25.4)
  print(p);dev.off()
 }
 factct <- function(x) factor(x,levels=rev(ctorder),labels=rev(unname(ctlab)))

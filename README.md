@@ -6,7 +6,7 @@ The repository contains the analytical code, gene sets, study registry and compa
 
 ## Requirements
 
-R 4.4.2 and the packages recorded in `config/software_versions.tsv`. Core analyses use data.table, Matrix, SingleCellExperiment, scuttle, scDblFinder, scran, scater, mgcv and BiocParallel. Preprocessing also uses harmony, uwot, irlba and igraph; trajectory inference uses slingshot. Figures use ggplot2, patchwork and grid. Package installation is not performed automatically.
+R 4.4.2 and the packages recorded in `config/software_versions.tsv`. Core analyses use data.table, Matrix, SingleCellExperiment, scuttle, scDblFinder, scran, scater, mgcv and BiocParallel. Preprocessing also uses harmony, uwot, irlba and igraph; trajectory inference uses slingshot. Figures use ggplot2, patchwork and grid, with Quartz on macOS or Cairo elsewhere for embedded-font vector export. Package installation is not performed automatically.
 
 ## Reproduce the sensitivity analyses
 

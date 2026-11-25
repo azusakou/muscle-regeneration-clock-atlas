@@ -203,3 +203,74 @@ if(file.exists(file.path(input,"depletion_phase.tsv"))) {
  }))
  write_table(res,"depletion_fixed_panel")
 }
+
+# Re-estimate the age-defined reference under every permuted assignment.
+# This preserves the reference-fitting step in the null distribution.
+refit_age_tests <- function(x,root) {
+ age0<-fread(file.path(root,'results/age_RSI_inference.tsv'))
+ out<-rbindlist(lapply(age0$time_days,function(tt){
+  unitmap<-unique(x[injury_model_std=='NTX' & age_class%in%c('young','geriatric') & time_days==tt,.(unit,age_class)])
+  ids<-unitmap$unit;n<-sum(unitmap$age_class=='young');pp<-combn(ids,n,simplify=FALSE)
+  effects<-vapply(pp,function(ys){
+   xx<-copy(x);xx[unit%in%ids,age_class:=ifelse(unit%in%ys,'young','geriatric')]
+   a<-aggregate_units(calculate(xx)$samples[injury_model_std=='NTX'&time_days==tt])
+   mean(a[age_class=='geriatric',RSI])-mean(a[age_class=='young',RSI])
+  },0.0)
+  obs<-age0[time_days==tt,effect]
+  data.table(time_days=tt,exact_refit_p=mean(abs(effects)>=abs(obs)-1e-12),n_allocations=length(effects),n_invalid=sum(!is.finite(effects)))
+ }))
+ out[,holm_refit_p:=p.adjust(exact_refit_p,'holm',n=6)]
+ fwrite(out,file.path(root,'results/age_reference_refit_tests.tsv'),sep='\t');print(out)
+}
+frozen_age_reference <- function(x,root) {
+ training<-copy(x[age_class=='young'&injury_model_std%in%c('CTX','BaCl2')])
+ tr<-calculate(training)
+ sig<-unique(tr$samples$reference_sigma)[1]
+ target<-copy(x[injury_model_std=='NTX']);target[,`:=`(phase=phase_harmonized,w=1-exp(-n_cells/50),a=target_tau,expected=NA_real_)]
+ for(ct in unique(target$cell_type)) {
+  a<-training[cell_type==ct];ii<-which(target$cell_type==ct)
+  if(nrow(a)<6||uniqueN(a$target_tau)<4)next
+  a[,`:=`(a=target_tau,phase=phase_harmonized,w=1-exp(-n_cells/50))]
+  k<-min(5,uniqueN(a$a)-1);fit<-gam(phase~s(a,k=k),data=a,weights=w,method='REML')
+  target$expected[ii]<-predict(fit,target[ii])
+ }
+ target[,deviation:=phase-expected]
+ r<-target[is.finite(deviation),.(RSI=if(.N>=4)exp(-wv(deviation,w)/sig^2)else NA_real_,n_lineages=.N),by=.(unit,sample_uid,time_days,age_class)]
+ a<-aggregate_units(r);res<-a[age_class%in%c('young','geriatric'),{v<-exact(RSI[age_class=='young'],RSI[age_class=='geriatric']);list(effect=v[1],exact_p=v[2],n_young=sum(age_class=='young'),n_geriatric=sum(age_class=='geriatric'))},by=time_days]
+ res[,holm_p:=p.adjust(exact_p,'holm')]
+ fwrite(r,file.path(root,'results/external_reference_RSI.tsv'),sep='\t');fwrite(res,file.path(root,'results/external_reference_age_tests.tsv'),sep='\t');print(res)
+}
+refit_age_tests(x,root)
+frozen_age_reference(x,root)
+
+library(data.table)
+pairing_samples<-fread(file.path(root,'results/RSI_sensitivity_samples.tsv'))[variant=='injury_crossfit' & injury_model_std=='NTX']
+pairs<-list(AB_CD=list(c('A','B'),c('C','D')),AC_BD=list(c('A','C'),c('B','D')),AD_BC=list(c('A','D'),c('B','C')))
+z<-rbindlist(lapply(names(pairs),function(nm){
+ g<-copy(pairing_samples[age_class=='geriatric'&is.finite(RSI)]);g[,replicate:=sub('.*_','',sample_uid)]
+ g[,group:=ifelse(replicate%in%pairs[[nm]][[1]],1,2)]
+ a<-g[,.(RSI=weighted.mean(RSI,n_lineages)),by=.(time_days,group)]
+ b<-pairing_samples[age_class=='young'&is.finite(RSI),.(young_mean=mean(RSI)),by=time_days]
+ a<-merge(a[,.(geriatric_mean=mean(RSI)),by=time_days],b,by='time_days');a[,.(pairing=nm,time_days,effect=geriatric_mean-young_mean)]
+}))
+fwrite(z,file.path(root,'results/age_pairing_sensitivity.tsv'),sep='\t');print(z[,.(min_effect=min(effect),max_effect=max(effect)),by=time_days])
+
+suppressPackageStartupMessages(library(data.table));set.seed(20261125)
+d<-fread(file.path(root,'results/external_reference_RSI.tsv'))[is.finite(RSI)]
+d<-d[,.(RSI=weighted.mean(RSI,n_lineages)),by=.(unit,age_class,time_days)]
+d<-d[time_days>0];d[,age_class:=factor(age_class,c('young','old','geriatric'))]
+X<-model.matrix(~factor(time_days)+age_class,d);X0<-model.matrix(~factor(time_days),d);y<-d$RSI
+calc<-function(ages) {xx<-model.matrix(~factor(d$time_days)+factor(ages,levels=c('young','old','geriatric')));fit<-lm.fit(xx,y);rss<-sum(fit$residuals^2);f<-((sum(lm.fit(X0,y)$residuals^2)-rss)/2)/(rss/(length(y)-ncol(xx)));c(f=unname(f),old=unname(fit$coefficients[ncol(xx)-1]),geriatric=unname(fit$coefficients[ncol(xx)]))}
+obs<-calc(as.character(d$age_class));strata<-split(seq_len(nrow(d)),d$time_days)
+null<-replicate(10000,{a<-as.character(d$age_class);for(ii in strata)a[ii]<-sample(a[ii]);calc(a)})
+p<-c((1+sum(null[1,]>=obs[1]-1e-12))/10001,(1+rowSums(abs(null[2:3,,drop=FALSE])>=abs(obs[2:3])-1e-12))/10001)
+r<-data.table(contrast=c('omnibus_age','old_minus_young','geriatric_minus_young'),estimate=obs,permutation_p=p,n_units=nrow(d),permutations=10000)
+r[,holm_p:=p.adjust(permutation_p,'holm')]
+fwrite(d,file.path(root,'results/all_age_external_reference_units.tsv'),sep='\t');fwrite(r,file.path(root,'results/all_age_external_reference_tests.tsv'),sep='\t');print(r)
+
+library(data.table)
+p<-paste0(file.path(root,'results'),'/')
+a<-fread(paste0(p,'age_RSI_inference.tsv'));r<-fread(paste0(p,'age_reference_refit_tests.tsv'));q<-fread(paste0(p,'age_pairing_sensitivity.tsv'))[,.(pairing_lower=min(effect),pairing_upper=max(effect)),by=time_days]
+a<-merge(a,r,by='time_days');a<-merge(a,q,by='time_days');a[,`:=`(exact_p=exact_refit_p,holm_p=holm_refit_p,lower=pairing_lower,upper=pairing_upper,uncertainty_type='range_across_three_TA_pairings')]
+a[,c('exact_refit_p','holm_refit_p','pairing_lower','pairing_upper'):=NULL]
+fwrite(a,paste0(p,'age_RSI_inference.tsv'),sep='\t');print(a)

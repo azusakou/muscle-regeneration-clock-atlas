@@ -21,7 +21,7 @@ c<-fread(file.path(res,"age_RSI_inference.tsv"));c[,day:=factor(time_days,rev(ti
 p2<-ggplot(c,aes(effect,day))+geom_vline(xintercept=0,colour="grey65",linewidth=.35)+
  geom_errorbar(aes(xmin=lower,xmax=upper),width=.16,orientation="y",na.rm=TRUE,linewidth=.5)+geom_point(size=2,colour=ages[3])+
  geom_text(aes(label=paste0("n=",n_young,"/",n_geriatric)),x=.64,hjust=1,size=2.2)+
- coord_cartesian(xlim=c(-.45,.68),clip="off")+labs(x="Geriatric - young RSI (95% interval)",y="Days after injury",title="Observed contrasts",tag="b")
+ coord_cartesian(xlim=c(-.45,.68),clip="off")+labs(x="Geriatric - young RSI (pairing range)",y="Days after injury",title="Observed contrasts",tag="b")
 l<-fread(file.path(res,"phase_anchor_sensitivity.tsv"))[variant=="injury_crossfit" & injury_model_std=="NTX"]
 l<-l[,.(deviation=weighted.mean(deviation,1-exp(-n_cells/50),na.rm=TRUE)),by=.(unit,age_class,time_days,cell_type)]
 l<-l[,.(deviation=mean(deviation,na.rm=TRUE)),by=.(age_class,time_days,cell_type)]
@@ -301,3 +301,20 @@ savefig(ps2a/(ps2b|ps2c)+plot_layout(heights=c(.9,1.1)),'SupplementaryFigure2',1
 sdout(kk,'Supplementary2c_coupling')
 
 })
+
+if(file.exists(file.path(res,"denervation_sample_gene_expression.tsv"))) {
+cols<-c(control='#376B91',denervated='#BA6048',sham='#376B91',clodronate='#BA6048')
+x<-fread(file.path(res,'denervation_sample_gene_expression.tsv'));x<-melt(x,id.vars='gene',variable.name='sample_id',value.name='expression')
+x[,condition:=ifelse(grepl('^N',sample_id),'denervated','control')];x[,z:=(expression-mean(expression))/sd(expression),by=gene]
+x<-x[gene%in%c('Chrna1','Chrnb1','Chrnd','Chrng','Musk','Ncam1','Myog','Hdac4','Runx1')]
+x[,gene:=factor(gene,rev(c('Chrna1','Chrnb1','Chrnd','Chrng','Musk','Ncam1','Myog','Hdac4','Runx1')))]
+a<-ggplot(x,aes(sample_id,gene,fill=z))+geom_tile(colour='white',linewidth=.3)+scale_fill_gradient2(low='#376B91',mid='white',high='#BA6048',midpoint=0)+labs(x='Independent animals',y=NULL,tag='a',title='Established denervation response',fill='Gene z-score')+theme(legend.position='bottom')
+b<-fread(file.path(res,'denervation_sample_scores.tsv'))[module=='denervation_response'];b[,condition:=factor(condition,c('control','denervated'))]
+pb<-ggplot(b,aes(condition,score,colour=condition))+geom_point(position=position_jitter(width=.07,height=0,seed=1),size=2)+stat_summary(fun=mean,geom='point',shape=95,size=7)+scale_colour_manual(values=cols)+labs(x=NULL,y='Denervation module (z)',tag='b',title='Pathway control')+annotate('text',x=1.5,y=max(b$score)+.25,label='CAMERA q = 9.03 × 10⁻³⁴',size=2.7)+theme(legend.position='none',axis.text.x=element_text(angle=15,hjust=1))
+c<-fread(file.path(res,'denervation_RSI.tsv'));c[,condition:=factor(condition,c('control','denervated'))]
+pc<-ggplot(c,aes(condition,RSI,colour=condition))+geom_point(position=position_jitter(width=.07,height=0,seed=3),size=2)+stat_summary(fun=mean,geom='point',shape=95,size=7)+scale_colour_manual(values=cols)+coord_cartesian(ylim=c(0,1.12))+labs(x=NULL,y='Fixed-panel RSI',tag='c',title='Alignment under denervation')+annotate('text',x=1.5,y=1.07,label='Δ = −0.270; exact refit P = 0.20',size=2.65)+theme(legend.position='none',axis.text.x=element_text(angle=15,hjust=1))
+d<-fread(file.path(res,'depletion_programme_scores.tsv'))[cell_type=='FAP'];d[,condition:=factor(condition,c('sham','clodronate'))];d[,module:=factor(module,c('FAP_matrix','TNF_response','TGFbeta_response'),c('Matrix','TNF response','TGF-β response'))]
+pd<-ggplot(d,aes(condition,score,colour=condition))+geom_point(position=position_jitter(width=.08,height=0,seed=2),size=1.6)+stat_summary(fun=mean,geom='point',shape=95,size=6)+facet_wrap(~module,nrow=1,scales='free_y')+scale_colour_manual(values=cols)+labs(x=NULL,y='FAP programme expression (log CP10K)',tag='d',title='Downstream response to macrophage depletion')+theme(legend.position='none',axis.text.x=element_text(angle=25,hjust=1))
+p<-(a+(pb/pc))/pd+plot_layout(heights=c(1.75,1))
+savefig(p,"SupplementaryFigure7",h=6.3)
+}

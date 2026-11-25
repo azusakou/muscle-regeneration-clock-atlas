@@ -53,6 +53,9 @@ units<-g[,.(mean_logCP10K=weighted.mean(mean_logCP10K,n_cells),
  fraction_detected=weighted.mean(fraction_detected,n_cells),n_cells=sum(n_cells)),
  by=.(unit,age_class,time_days,cell_type,gene)]
 fwrite(units,file.path(out,"biological_unit_gene_expression.tsv.gz"),sep="\t")
+receptors<-units[cell_type=="FAP" & n_cells>=20 & gene%in%sets$FAP_receptors,
+ .(n_groups=.N,mean_expression=mean(mean_logCP10K),mean_fraction_detected=mean(fraction_detected)),by=gene]
+fwrite(receptors,file.path(out,"FAP_receptor_expression.tsv"),sep="\t")
 modules<-rbindlist(lapply(names(sets),function(nm)units[gene%in%sets[[nm]],
  .(score=mean(mean_logCP10K),n_genes=.N,n_cells=unique(n_cells)[1]),
  by=.(unit,age_class,time_days,cell_type)][,module:=nm]))

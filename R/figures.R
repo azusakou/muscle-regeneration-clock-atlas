@@ -115,7 +115,7 @@ for(i in seq_along(lanes)){
 txt(.27,.588,"Positions are schematic; programmes overlap across lineages.",6.8,col="#5A6771")
 txt(.025,.545,"b",11,2);txt(.068,.545,"Observed state relationships",9,2)
 box(.265,.449,.43,.14,"Age comparison\nCross-fitted RSI lower at 3 of 6 times\nNo significant time-specific age contrast\nMixed timing and programme-strength effects",fill="#EAF1F6",size=7.6)
-box(.745,.449,.43,.14,"Macrophage depletion\nFive eligible animals; exact P = 0.20\nFour-lineage contrast: -0.354\nWithout macrophages: +0.072 (three lineages)",fill="#EAF1F6",size=7.6)
+box(.745,.449,.43,.14,"Macrophage depletion\nFive eligible animals; refitted P = 0.35\nFour-lineage contrast: -0.354\nWithout macrophages: +0.072 (three lineages)",fill="#EAF1F6",size=7.6)
 txt(.5,.352,"State alignment is reference dependent and is not a tissue-recovery score.",7.7,2,just="centre")
 txt(.025,.31,"c",11,2);txt(.068,.31,"Mechanistic context and testable links",9,2)
 cx<-c(.145,.38,.615,.85)
@@ -333,4 +333,17 @@ d<-fread(file.path(res,'independent_age_myonuclear_phase.tsv'));d[,age_class:=fa
 pd<-ggplot(d,aes(factor(time_days),pooled_phase,colour=age_class))+geom_point(position=position_jitterdodge(jitter.width=.1,dodge.width=.35,seed=2),size=2)+scale_colour_manual(values=c(young=unname(ages['young']),old=unname(ages['geriatric'])),labels=c('Young (4–8 mo)','Aged (24–28 mo)'))+labs(x='Days after barium chloride',y='Myonuclear expression phase',title='Held-out age comparison, 13 libraries',tag='d')+annotate('text',x=2,y=.725,label='Age contrast = −0.0083; exact P = 0.672',size=2.5)+coord_cartesian(ylim=c(.35,.75))+theme(legend.position='top',legend.text=element_text(size=6.5))
 p<-(pa+pb)/(pc+pd)+plot_layout(heights=c(1,1.05))
 savefig(p,"SupplementaryFigure8",h=6.2)
+}
+
+if(file.exists(file.path(res,"depletion_reference_refit_samples.tsv"))) {
+a<-fread(file.path(res,'depletion_reference_refit_samples.tsv'));a[,condition:=factor(condition,c('sham','clodronate'),c('Sham','Clodronate'))]
+p1<-ggplot(a,aes(condition,RSI,colour=condition))+geom_point(position=position_jitter(width=.08,height=0,seed=1),size=2)+stat_summary(fun=mean,geom='point',shape=95,size=7,colour='black')+scale_colour_manual(values=c('#376B91','#BA6048'))+coord_cartesian(ylim=c(0,1))+labs(x=NULL,y='RSI',title='Five eligible animals',tag='a')+annotate('text',x=1.5,y=.96,label='Δ = −0.366; reference-refitted P = 0.35',size=2.5)+theme(legend.position='none')
+b<-fread(file.path(res,'depletion_reference_refit_permutations.tsv'));b[,bin:=round(effect/.04)*.04];b[,stack:=seq_len(.N),by=bin]
+p2<-ggplot(b,aes(effect,stack,colour=extreme))+geom_vline(xintercept=c(-1,1)*.365778804596545,linetype=2,colour='grey50',linewidth=.4)+geom_point(size=2)+scale_colour_manual(values=c(`FALSE`='#8599B1',`TRUE`='#BA6048'),labels=c('Within threshold','At least as extreme'))+labs(x='Refitted clodronate − sham RSI',y='Allocation stack',title='All 20 treatment-label allocations',tag='b')+theme(legend.position='top',legend.text=element_text(size=6.5))
+c<-fread(file.path(root,'input/depletion_phase.tsv'))[n_cells>=20];c[,animal:=paste(ifelse(condition=='sham','SHAM','CLL'),replicate)];c[,animal:=factor(animal,c('CLL 12','CLL 2','CLL 5','SHAM 3','SHAM 8','SHAM 9'))]
+p3<-ggplot(c,aes(animal,coarse_cell_type,fill=deviation))+geom_tile(colour='white',linewidth=.4)+scale_fill_gradient2(low='#376B91',mid='white',high='#BA6048',midpoint=0,name='Deviation')+labs(x=NULL,y=NULL,title='Lineage departures',tag='c')+scale_y_discrete(labels=function(x)gsub('_',' ',x))+theme(axis.text.x=element_text(angle=30,hjust=1),legend.position='bottom',axis.text.y=element_text(size=6.5))
+d<-data.table(time_days=c(0,5,14),RSI=c(.550079595887018,.815920252435237,.930479550378894))
+p4<-ggplot(d,aes(time_days,RSI))+geom_line(colour='#C49A48',linewidth=.6)+geom_point(colour='#C49A48',size=2)+coord_cartesian(ylim=c(0,1))+scale_x_continuous(breaks=c(0,5,14))+labs(x='Days after injury',y='Descriptive RSI',title='Hypothyroid pooled libraries',tag='d')
+p<-(p1+p2)/(p3+p4)+plot_layout(heights=c(1,1.1))
+savefig(p,"Figure5_failure",h=5.5)
 }

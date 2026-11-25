@@ -260,3 +260,22 @@ a<-fread(paste0(p,'age_RSI_inference.tsv'));r<-fread(paste0(p,'age_reference_ref
 a<-merge(a,r,by='time_days');a<-merge(a,q,by='time_days');a[,`:=`(exact_p=exact_refit_p,holm_p=holm_refit_p,lower=pairing_lower,upper=pairing_upper,uncertainty_type='range_across_three_TA_pairings')]
 a[,n_allocations:=n_allocations.y];a[,c('exact_refit_p','holm_refit_p','pairing_lower','pairing_upper','n_allocations.x','n_allocations.y'):=NULL]
 fwrite(a,paste0(p,'age_RSI_inference.tsv'),sep='\t');print(a)
+
+suppressPackageStartupMessages(library(data.table))
+depletion_reference_refit <- function(root) {
+d<-fread(file.path(root,'input/depletion_phase.tsv'))
+calc<-function(sham){
+ x<-copy(d);x[,condition:=ifelse(sample_id%in%sham,'sham','clodronate')];x[,expected:=NA_real_]
+ for(ct in unique(x$coarse_cell_type))for(id in unique(x[coarse_cell_type==ct,sample_id])){
+ ref<-setdiff(sham,if(id%in%sham)id else character());x[coarse_cell_type==ct&sample_id==id,expected:=mean(x[coarse_cell_type==ct&sample_id%in%ref,phase])]
+ }
+ x[,dev:=phase-expected];sig<-max(.05,sqrt(mean(x[condition=='sham',dev]^2,na.rm=TRUE)))
+ r<-x[is.finite(dev)&n_cells>=20,{w<-reliability;v<-sum(w*(dev-weighted.mean(dev,w))^2)/sum(w);.(RSI=if(.N>=4)exp(-v/sig^2)else NA_real_,n=.N)},by=.(sample_id,condition)]
+ r<-r[is.finite(RSI)];list(samples=r,effect=mean(r[condition=='clodronate',RSI])-mean(r[condition=='sham',RSI]))
+}
+sham<-unique(d[condition=='sham',sample_id]);obs<-calc(sham)
+
+ids<-unique(d$sample_id);ii<-combn(ids,3,simplify=FALSE);null<-vapply(ii,function(k)calc(k)$effect,0.0)
+z<-data.table(effect=obs$effect,exact_refit_p=mean(abs(null)>=abs(obs$effect)-1e-12),n_allocations=length(null),n_valid_RSI=nrow(obs$samples));fwrite(z,file.path(root,'results/depletion_reference_refit.tsv'),sep='\t');fwrite(obs$samples,file.path(root,'results/depletion_reference_refit_samples.tsv'),sep='\t');fwrite(data.table(effect=null,extreme=abs(null)>=abs(obs$effect)-1e-12),file.path(root,'results/depletion_reference_refit_permutations.tsv'),sep='\t');print(z)
+}
+depletion_reference_refit(root)

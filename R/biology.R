@@ -116,14 +116,14 @@ independent_validation <- function(root) {
  programs<-list(Activation=c('Fos','Jun','Junb','Egr1','Myod1'),Proliferation=c('Mki67','Top2a','Ccnb1','Pcna','Ube2c'),Commitment=c('Myod1','Myf5','Des','Cdkn1c'),Fusion=c('Myog','Mymk','Mymx','Tnnt1','Ckm'),Remodeling=c('Col1a1','Col3a1','Fn1','Mmp14','Tgfb1'),Resolution=c('Mrc1','C1qa','C1qb','Il10','Apoe'))
  all<-list();qcs<-list()
  for(sid in ids) {
-  checkpoint<-file.path(out,paste0('age_validation_',sid,'.rds'))
+  checkpoint<-file.path(out,paste0('age_alias_validation_',sid,'.rds'))
   if(file.exists(checkpoint)){z<-readRDS(checkpoint);all[[sid]]<-z$scores;qcs[[sid]]<-z$qc;next}
-  f<-list.files(raw,pattern=paste0('^',sid,'_.*\\.h5$'),full.names=TRUE);while(!length(f)){Sys.sleep(10);f<-list.files(raw,pattern=paste0('^',sid,'_.*\\.h5$'),full.names=TRUE)};stopifnot(length(f)==1)
+  f<-list.files(raw,pattern=paste0('^',sid,'_.*\\.h5$'),full.names=TRUE);stopifnot(length(f)==1)
   message('Independent age: ',sid)
   pointer<-rhdf5::h5read(f,"matrix/indptr");shape<-rhdf5::h5read(f,"matrix/shape")
   candidate<-which(diff(pointer)>=200)
   m<-new("dgCMatrix",i=as.integer(rhdf5::h5read(f,"matrix/indices")),p=as.integer(pointer),x=as.numeric(rhdf5::h5read(f,"matrix/data")),Dim=as.integer(shape))
-  m<-m[,candidate,drop=FALSE];symbols<-as.character(rhdf5::h5read(f,"matrix/features/name"));rownames(m)<-make.unique(symbols)
+  m<-m[,candidate,drop=FALSE];symbols<-as.character(rhdf5::h5read(f,"matrix/features/name"));if(!'Mymk'%in%symbols)symbols[symbols=='Tmem8c']<-'Mymk';if(!'Mymx'%in%symbols)symbols[symbols=='Gm7325']<-'Mymx';rownames(m)<-make.unique(symbols)
   s<-SingleCellExperiment(list(counts=m));umi<-Matrix::colSums(m);det<-Matrix::colSums(m>0)
   mt<-if(any(grepl('^mt-',symbols,ignore.case=TRUE)))Matrix::colSums(m[grepl('^mt-',symbols,ignore.case=TRUE),,drop=FALSE])/pmax(umi,1)*100 else rep(0,length(umi))
   keep<-umi>=500&umi<=50000&det>=200&det<=6000&mt<=20
@@ -146,47 +146,53 @@ independent_validation <- function(root) {
  evaluate_independent_age(d,root,names(programs))
 }
 evaluate_independent_age <- function(d,root,programs=c('Activation','Proliferation','Commitment','Fusion','Remodeling','Resolution')) {
- suppressPackageStartupMessages({library(data.table);library(mgcv)})
- out<-file.path(root,'results');d<-copy(d[n_cells>=20]);d[dataset_id=='GSE143437',age_class:='young'];stopifnot(all(d$age_class%in%c('young','old','geriatric')))
+ suppressPackageStartupMessages(library(data.table));out<-file.path(root,'results');d<-copy(d[n_cells>=20]);design<-unique(d[,.(sample_id,age_class,time_days)])
  soft<-function(z){z<-sweep(z,1,apply(z,1,max),'-')/.8;p<-exp(z);as.numeric((p/rowSums(p))%*%c(.12,.28,.45,.64,.80,.94))}
- # All normalization, reference fitting and dispersion calibration use young
- # libraries only. Each young library is excluded from its own reference.
- predict_fold<-function(train,test) {
-  mu<-colMeans(train[,..programs]);ss<-sapply(train[,..programs],sd);ss[ss<1e-8|!is.finite(ss)]<-1
-  scale_matrix<-function(a)sweep(sweep(as.matrix(a[,..programs]),2,mu,'-'),2,ss,'/')
-  train<-copy(train);test<-copy(test);train[,phase:=soft(scale_matrix(train))];test[,phase:=soft(scale_matrix(test))]
-  train[,a:=log1p(time_days)/log(8)];test[,a:=log1p(time_days)/log(8)];test[,expected:=NA_real_]
-  for(ct in unique(test$cell_type)) {
-   tr<-train[cell_type==ct];ii<-which(test$cell_type==ct)
-   if(uniqueN(tr$time_days)<3||nrow(tr)<4)next
-   fit<-lm(phase~a+I(a^2),data=tr)
-   test$expected[ii]<-predict(fit,test[ii])
-  }
-  test[,deviation:=phase-expected];test
+ fold<-function(train,test){
+  mu<-colMeans(train[,..programs]);ss<-sapply(train[,..programs],sd);ss[!is.finite(ss)|ss<1e-8]<-1
+  project<-function(a){z<-sweep(sweep(as.matrix(a[,..programs]),2,mu,'-'),2,ss,'/');a<-copy(a);a[,`:=`(phase=soft(z),a=log1p(time_days)/log(8))];a}
+  tr<-project(train);te<-project(test);te[,expected:=NA_real_]
+  for(ct in unique(te$cell_type)){
+   a<-tr[cell_type==ct];ii<-which(te$cell_type==ct)
+   if(nrow(a)<3||uniqueN(a$time_days)<2)next
+   te$expected[ii]<-as.numeric(predict(lm(phase~a,data=a),te[ii]))
+  };te[,deviation:=phase-expected];te
  }
- young<-d[age_class=='young'];old<-predict_fold(young,d[age_class=='old'])
- yy<-rbindlist(lapply(unique(young$sample_id),function(sid)predict_fold(young[sample_id!=sid],young[sample_id==sid])))
- dev<-rbindlist(list(yy,old));sigma<-max(.05,sd(yy$deviation,na.rm=TRUE))
- r<-dev[is.finite(deviation),.(RSI=if(.N>=4)exp(-var(deviation)*(.N-1)/.N/sigma^2)else NA_real_,n_lineages=.N,mean_phase=mean(phase)),by=.(sample_id,age_class,time_days)]
- panel<-c('FAP','macrophage','endothelial','myonucleus')
- f<-dev[is.finite(deviation)&cell_type%in%panel,.(RSI=if(.N==4)exp(-var(deviation)*3/4/sigma^2)else NA_real_,n_lineages=.N),by=.(sample_id,age_class,time_days)]
- exact<-function(a,b){v<-c(a,b);obs<-mean(b)-mean(a);ii<-combn(seq_along(v),length(a));null<-apply(ii,2,function(k)mean(v[-k])-mean(v[k]));c(effect=obs,p=mean(abs(null)>=abs(obs)-1e-12),n_allocations=ncol(ii))}
- res<-rbindlist(lapply(list(all_lineages=r,common_four=f),function(x)x),idcol='panel')
- tests<-res[is.finite(RSI),{a<-RSI[age_class=='young'];b<-RSI[age_class=='old'];if(!length(a)||!length(b))NULL else {e<-exact(a,b);list(n_young=length(a),n_old=length(b),effect=e[1],exact_p=e[2],n_allocations=e[3])}},by=.(panel,time_days)]
- tests[,holm_p:=p.adjust(exact_p,'holm'),by=panel]
- # The stratified aggregate is tested with all age-label allocations within
- # each injury time; time-point mean contrasts receive equal weight.
- combined<-res[is.finite(RSI),{
-  xx<-copy(.SD);tt<-sort(unique(xx$time_days));nn<-lapply(tt,function(t){z<-xx[time_days==t];v<-z$RSI;ii<-combn(seq_along(v),sum(z$age_class=='young'));apply(ii,2,function(k)mean(v[-k])-mean(v[k]))})
-  if(any(lengths(nn)==0))NULL else{
-   grid<-expand.grid(lapply(nn,seq_along));null<-rowMeans(sapply(seq_along(nn),function(j)nn[[j]][grid[[j]]]))
-   obs<-mean(vapply(tt,function(t)mean(xx[time_days==t&age_class=='old',RSI])-mean(xx[time_days==t&age_class=='young',RSI]),0.0))
-   list(effect=obs,exact_p=mean(abs(null)>=abs(obs)-1e-12),n_allocations=length(null))
+ score<-function(labels){
+  dd<-copy(d);dd[,age_class:=unname(labels[sample_id])];young<-dd[age_class=='young']
+  old<-fold(young,dd[age_class=='old']);yy<-rbindlist(lapply(unique(young$sample_id),function(id)fold(young[sample_id!=id],young[sample_id==id])))
+  dev<-rbindlist(list(yy,old));sig<-max(.05,sd(yy$deviation,na.rm=TRUE));if(!is.finite(sig))sig<-.05
+  res<-rbindlist(lapply(c('all_lineages','common_four'),function(panel){
+   a<-dev[is.finite(deviation)];if(panel=='common_four')a<-a[cell_type%in%c('FAP','macrophage','endothelial','myonucleus')]
+   z<-a[,.(RSI=if(.N>=4)exp(-sum((deviation-mean(deviation))^2)/.N/sig^2)else NA_real_,n_lineages=.N,mean_phase=mean(phase)),by=.(sample_id,age_class,time_days)]
+   z[,panel:=panel];z
+  }),fill=TRUE)
+  list(samples=res,lineages=dev)
+ }
+ labels<-setNames(design$age_class,design$sample_id);obs<-score(labels)
+ effect<-function(s,pn,tt){a<-s[panel==pn & time_days==tt & is.finite(RSI)];if(!all(c('young','old')%in%a$age_class))return(NA_real_);mean(a[age_class=='old',RSI])-mean(a[age_class=='young',RSI])}
+ tests<-list();times<-sort(unique(design$time_days))
+ for(tt in times){
+  id<-design[time_days==tt,sample_id];ny<-design[time_days==tt&age_class=='young',.N];pp<-combn(id,ny,simplify=FALSE)
+  null<-sapply(pp,function(ys){lab<-labels;lab[id]<-ifelse(id%in%ys,'young','old');z<-score(lab)$samples;c(all_lineages=effect(z,'all_lineages',tt),common_four=effect(z,'common_four',tt))})
+  for(pn in c('all_lineages','common_four')){
+   e<-effect(obs$samples,pn,tt);vals<-null[pn,];a<-obs$samples[panel==pn&time_days==tt&is.finite(RSI)]
+   tests[[paste(pn,tt)]]<-data.table(panel=pn,time_days=tt,n_young=sum(a$age_class=='young'),n_old=sum(a$age_class=='old'),effect=e,exact_refit_p=if(is.finite(e)&&all(is.finite(vals)))mean(abs(vals)>=abs(e)-1e-12)else NA_real_,n_allocations=length(vals),n_invalid=sum(!is.finite(vals)))
   }
- },by=panel]
- fwrite(dev,file.path(out,'independent_age_phase_deviations.tsv'),sep='\t');fwrite(res,file.path(out,'independent_age_RSI.tsv'),sep='\t');fwrite(tests,file.path(out,'independent_age_tests.tsv'),sep='\t');fwrite(combined,file.path(out,'independent_age_stratified_test.tsv'),sep='\t')
- print(tests);print(combined)
+ }
+ tests<-rbindlist(tests);tests[,holm_p:=p.adjust(exact_refit_p,'holm',n=3),by=panel]
+ # A separate age-label-independent myonuclear phase projection uses all 13
+ # libraries, without a cross-lineage eligibility requirement.
+ mu<-colMeans(d[,..programs]);ss<-sapply(d[,..programs],sd);ss[!is.finite(ss)|ss<1e-8]<-1
+ z<-sweep(sweep(as.matrix(d[,..programs]),2,mu,'-'),2,ss,'/');d[,pooled_phase:=soft(z)]
+ myo<-d[cell_type=='myonucleus'];myo[,age_class:=factor(age_class,c('young','old'))]
+ coef_age<-function(ag){X<-model.matrix(~factor(myo$time_days)+factor(ag,levels=c('young','old')));tail(lm.fit(X,myo$pooled_phase)$coefficients,1)}
+ actual<-unname(coef_age(myo$age_class));strata<-split(seq_len(nrow(myo)),myo$time_days);alloc<-lapply(strata,function(ii)combn(ii,sum(myo$age_class[ii]=='young'),simplify=FALSE));grid<-expand.grid(lapply(alloc,seq_along))
+ null<-vapply(seq_len(nrow(grid)),function(k){ag<-rep('old',nrow(myo));for(j in seq_along(alloc))ag[alloc[[j]][[grid[[j]][k]]]]<-'young';unname(coef_age(ag))},0.0)
+ phase_test<-data.table(cell_type='myonucleus',effect=actual,exact_p=mean(abs(null)>=abs(actual)-1e-12),n_libraries=nrow(myo),n_allocations=length(null))
+ fwrite(obs$lineages,file.path(out,'independent_age_phase_deviations.tsv'),sep='\t');fwrite(obs$samples,file.path(out,'independent_age_RSI.tsv'),sep='\t');fwrite(tests,file.path(out,'independent_age_tests.tsv'),sep='\t');fwrite(myo,file.path(out,'independent_age_myonuclear_phase.tsv'),sep='\t');fwrite(phase_test,file.path(out,'independent_age_myonuclear_test.tsv'),sep='\t');print(tests);print(phase_test)
 }
+
 denervation_validation <- function(root) {
  suppressPackageStartupMessages({library(SingleCellExperiment);library(Matrix);library(scuttle);library(scDblFinder);library(BiocParallel);library(data.table);library(edgeR)})
  set.seed(20261125);out<-file.path(root,'results')
@@ -286,17 +292,18 @@ harmonized_age_validation <- function(root) {
 
  # Use the same available genes in all four NTX accessions.
  probe<-list.files(lifespan,pattern="_genes.tsv.gz$",full.names=TRUE)[1]
- g1<-fread(probe,header=FALSE)[[2]]
+ canonical<-function(g){if(!'Mymk'%in%g)g[g=='Tmem8c']<-'Mymk';if(!'Mymx'%in%g)g[g=='Gm7325']<-'Mymx';g};g1<-canonical(fread(probe,header=FALSE)[[2]])
  gf<-list.files(file.path(rawroot,"extracted/GSE159500"),pattern="_soupx_genes.tsv.gz$",full.names=TRUE)[1];g2<-fread(gf,header=FALSE)[[2]]
  zf<-list.files(file.path(rawroot,"extracted/GSE162172"),pattern="_soupx.zip$",full.names=TRUE)[1];member<-unzip(zf,list=TRUE)$Name;member<-member[grepl("/genes.tsv$",member)]
  g3<-read.delim(unz(zf,member),header=FALSE)[[1]]
  g4<-fread(file.path(historic,"GSE143437_DeMicheli_MuSCatlas_rawdata.txt.gz"),select=1)[[1]]
- common<-Reduce(intersect,list(g1,g2,g3,g4))
+ common<-Reduce(intersect,lapply(list(g1,g2,g3,g4),canonical))
  coverage<-rbindlist(lapply(names(programs),function(nm)data.table(programme=nm,gene=programs[[nm]],shared=programs[[nm]]%in%common)))
  fwrite(coverage,file.path(out,"harmonized_programme_coverage.tsv"),sep="\t")
  programs<-lapply(programs,function(g)intersect(g,common));stopifnot(all(lengths(programs)>=3))
  genes<-unique(unlist(programs));res<-list()
  summarize<-function(m,dd,ids,totals=NULL){
+  rownames(m)<-make.unique(canonical(rownames(m)))
   ii<-match(dd$source_cell_id,ids);stopifnot(!anyNA(ii));tot<-if(is.null(totals))Matrix::colSums(m)[ii]else totals[ii]
   hit<-intersect(genes,rownames(m));lc<-log1p(sweep(as.matrix(m[hit,ii,drop=FALSE]),2,pmax(tot,1),'/')*10000)
   ss<-as.data.table(sapply(programs,function(g)colMeans(lc[intersect(g,rownames(lc)),,drop=FALSE])))
@@ -305,7 +312,7 @@ harmonized_age_validation <- function(root) {
   z[,`:=`(sample_id=dd$sample_id[1],dataset_id=dd$dataset_id[1],time_days=dd$time_days[1],age_class=dd$age_group[1])];z
  }
  for(sid in unique(md[dataset_id=='GSE232106',sample_id])) {
-  ck<-file.path(out,paste0('harmonized_',sid,'.rds'));if(file.exists(ck)){res[[sid]]<-readRDS(ck);next}
+  ck<-file.path(out,paste0('harmonized_alias_',sid,'.rds'));if(file.exists(ck)){res[[sid]]<-readRDS(ck);next}
   message('Common programmes: ',sid)
   dd<-md[sample_id==sid];if(grepl('Ger',sid)){
    p<-file.path(lifespan,paste0(sid,'_soupx'));mf<-paste0(p,'_matrix.mtx.gz');gf<-paste0(p,'_genes.tsv.gz');bf<-paste0(p,'_barcodes.tsv.gz')
@@ -314,11 +321,11 @@ harmonized_age_validation <- function(root) {
   z<-summarize(m,dd,paste(sid,bc,sep='__'));saveRDS(z,ck);res[[sid]]<-z;rm(m);gc()
  }
  # The historical wide matrix is read once, retaining only the common panel.
- ck<-file.path(out,'harmonized_GSE143437.rds')
+ ck<-file.path(out,'harmonized_alias_GSE143437.rds')
  if(file.exists(ck))res[['GSE143437']]<-readRDS(ck) else {
   con<-gzfile(file.path(historic,'GSE143437_DeMicheli_MuSCatlas_rawdata.txt.gz'),'rt');bc<-strsplit(readLines(con,n=1),'\t',fixed=TRUE)[[1]][-1];mat<-list();totals<-numeric(length(bc))
   repeat {lines<-readLines(con,n=250);if(!length(lines))break
-   for(line in lines){parts<-strsplit(line,'\t',fixed=TRUE)[[1]];g<-parts[1];v<-as.numeric(parts[-1]);totals<-totals+v;if(g%in%genes)mat[[g]]<-v}
+   for(line in lines){parts<-strsplit(line,'\t',fixed=TRUE)[[1]];g<-parts[1];if(g=='Tmem8c')g<-'Mymk';if(g=='Gm7325')g<-'Mymx';v<-as.numeric(parts[-1]);totals<-totals+v;if(g%in%genes)mat[[g]]<-v}
   };close(con);m<-do.call(rbind,mat)
   z<-rbindlist(lapply(unique(md[dataset_id=='GSE143437',sample_id]),function(sid)summarize(m,md[sample_id==sid],bc,totals)))
   saveRDS(z,ck);res[['GSE143437']]<-z
@@ -328,7 +335,7 @@ harmonized_age_validation <- function(root) {
   meta<-Sys.getenv(paste0('MUSCLE_',acc,'_METADATA'));stopifnot(file.exists(meta));ddall<-fread(meta)[passes_qc_and_singlet==TRUE]
   ddall[,`:=`(source_cell_id=cell_id,cell_type=coarse_cell_type,dataset_id=acc,age_group=ifelse(acc=='GSE162172','old','young'))]
   for(sid in unique(ddall$sample_id)){
-   ck<-file.path(out,paste0('harmonized_',acc,'_',sid,'.rds'));if(file.exists(ck)){res[[paste(acc,sid)]]<-readRDS(ck);next}
+   ck<-file.path(out,paste0('harmonized_alias_',acc,'_',sid,'.rds'));if(file.exists(ck)){res[[paste(acc,sid)]]<-readRDS(ck);next}
    dd<-ddall[sample_id==sid];p<-file.path(rawroot,'extracted',acc)
    if(acc=='GSE162172'){
     f<-list.files(p,pattern=paste0('_',sid,'_soupx.zip$'),full.names=TRUE);stopifnot(length(f)==1);members<-unzip(f,list=TRUE)$Name
@@ -381,15 +388,32 @@ harmonized_age_RSI <- function(d,root) {
  null<-replicate(10000,{aa<-as.character(a$age_class);for(ii in strata)aa[ii]<-sample(aa[ii]);calc(aa)})
  p<-c((1+sum(null[1,]>=obs[1]-1e-12))/10001,(1+rowSums(abs(null[2:3,,drop=FALSE])>=abs(obs[2:3])-1e-12))/10001)
  test<-data.table(contrast=c('omnibus_age','old_minus_young','geriatric_minus_young'),estimate=obs,permutation_p=p,n_units=nrow(a),n_times=length(keep));test[,holm_p:=p.adjust(permutation_p,'holm')]
- # Conditional bootstrap intervals for age coefficients retain the injury-time
- # and age strata, preserving observed biological-unit replication.
- groups<-split(seq_len(nrow(a)),interaction(a$time_days,a$age_class,drop=TRUE))
- boot<-replicate(2000,{ii<-unlist(lapply(groups,function(k)sample(k,length(k),TRUE)));b<-a[ii];fit<-lm(RSI~factor(time_days)+age_class,b);tail(coef(fit),2)})
- ci<-t(apply(boot,1,quantile,c(.025,.975),na.rm=TRUE));test[,`:=`(lower=c(NA,ci[,1]),upper=c(NA,ci[,2]))]
+ fwrite(data.table(statistic=rep(c("omnibus_age","old_minus_young","geriatric_minus_young"),each=ncol(null)),value=as.vector(t(null))),file.path(out,"harmonized_age_permutations.tsv.gz"),sep="\t")
  fwrite(rbindlist(all,idcol='reference'),file.path(out,'harmonized_age_RSI_units.tsv'),sep='\t');fwrite(test,file.path(out,'harmonized_age_tests.tsv'),sep='\t');print(test)
+}
+
+harmonized_lineage_age <- function(root) {
+ suppressPackageStartupMessages(library(data.table));set.seed(20261125)
+ out<-file.path(root,'results');d<-fread(file.path(out,'harmonized_age_pooled_lineages.tsv'))[is.finite(deviation)]
+ d<-d[,.(deviation=weighted.mean(deviation,w),n_cells=sum(n_cells)),by=.(unit,age_class,time_days,cell_type)]
+ d[,departure:=abs(deviation)];res<-list();coverage<-list()
+ for(ct in unique(d$cell_type)) {
+  a<-copy(d[cell_type==ct]);counts<-a[,.N,by=.(time_days,age_class)]
+  times<-counts[N>=2,.(n_groups=uniqueN(age_class)),by=time_days][n_groups==3,time_days];a<-a[time_days%in%times]
+  coverage[[ct]]<-data.table(cell_type=ct,n_times=length(times),n_units=nrow(a))
+  if(length(times)<2||nrow(a)<12)next
+  y<-a$departure
+  fit_coeff<-function(ag){X<-model.matrix(~factor(a$time_days)+factor(ag,levels=c('young','old','geriatric')));tail(lm.fit(X,y)$coefficients,2)}
+  obs<-fit_coeff(a$age_class);strata<-split(seq_len(nrow(a)),a$time_days)
+  null<-replicate(10000,{ag<-a$age_class;for(ii in strata)ag[ii]<-sample(ag[ii]);fit_coeff(ag)})
+  p<-(1+rowSums(abs(null)>=abs(obs)-1e-12))/10001
+  res[[ct]]<-data.table(cell_type=ct,contrast=c('old_minus_young','geriatric_minus_young'),effect=unname(obs),permutation_p=p,n_units=nrow(a),n_times=length(times))
+ }
+ z<-rbindlist(res);z[,BH_q:=p.adjust(permutation_p,'BH')]
+ fwrite(z,file.path(out,'harmonized_lineage_age_tests.tsv'),sep='\t');fwrite(rbindlist(coverage),file.path(out,'harmonized_lineage_age_coverage.tsv'),sep='\t');print(z[order(BH_q)])
 }
 
 args<-commandArgs(TRUE)
 root<-if(length(args))args[1]else"."
 mode<-if(length(args)>1)args[2]else"lifespan"
-switch(mode,lifespan=lifespan_validation(),independent=independent_validation(root),denervation=denervation_validation(root),depletion=depletion_gene_validation(root),harmonized=harmonized_age_validation(root),harmonized_scores=harmonized_age_RSI(data.table::fread(file.path(root,"results/harmonized_age_lineage_programs.tsv")),root),stop("Unknown biological validation: ",mode))
+switch(mode,lifespan=lifespan_validation(),independent=independent_validation(root),denervation=denervation_validation(root),depletion=depletion_gene_validation(root),harmonized=harmonized_age_validation(root),lineage_age=harmonized_lineage_age(root),harmonized_scores=harmonized_age_RSI(data.table::fread(file.path(root,"results/harmonized_age_lineage_programs.tsv")),root),stop("Unknown biological validation: ",mode))

@@ -27,3 +27,8 @@ uwot	not recorded	0.2.4
 irlba	not recorded	2.3.7
 jsonlite	not recorded	2.0.0
 matrixStats	not recorded	1.5.0
+edgeR	4.4.2	4.4.2
+limma	3.62.2	3.62.2
+rhdf5	2.50.2	2.50.2
+DropletUtils	1.26.0	1.26.0
+Seurat	5.4.0	5.4.0

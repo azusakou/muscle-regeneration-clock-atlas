@@ -318,3 +318,19 @@ pd<-ggplot(d,aes(condition,score,colour=condition))+geom_point(position=position
 p<-(a+(pb/pc))/pd+plot_layout(heights=c(1.75,1))
 savefig(p,"SupplementaryFigure7",h=6.3)
 }
+
+if(file.exists(file.path(res,"harmonized_age_tests.tsv"))) {
+ages<-c(young='#376B91',old='#C49A48',geriatric='#BA6048')
+a<-fread(file.path(res,'harmonized_age_RSI_units.tsv'))[reference=='pooled'];a[,age_class:=factor(age_class,c('young','old','geriatric'))];means<-a[,.(RSI=mean(RSI)),by=.(age_class,time_days)]
+pa<-ggplot(a,aes(time_days,RSI,colour=age_class))+geom_point(size=1.2,position=position_jitter(width=.09,height=0,seed=1),alpha=.7)+geom_line(data=means,linewidth=.5)+scale_colour_manual(values=ages,labels=c('Young','20-month-old','Geriatric'))+scale_x_continuous(breaks=c(0,1,2,3.5,5,7))+coord_cartesian(ylim=c(0,1))+labs(x='Days after notexin',y='Uniform-count RSI',title='Common gene panel, 51 biological groups',tag='a')+theme(legend.position='top',legend.text=element_text(size=6.5))
+b<-fread(file.path(res,'harmonized_age_permutations.tsv.gz'))[statistic!='omnibus_age'];b[,contrast:=factor(statistic,c('old_minus_young','geriatric_minus_young'),c('20-month-old\n− young','Geriatric\n− young'))]
+test<-fread(file.path(res,'harmonized_age_tests.tsv'))[contrast!='omnibus_age'];test[,label:=factor(contrast,c('old_minus_young','geriatric_minus_young'),c('20-month-old\n− young','Geriatric\n− young'))]
+pb<-ggplot(b,aes(contrast,value))+geom_violin(fill='#D9E2E9',colour='#8599B1',linewidth=.4,scale='width')+geom_hline(yintercept=0,colour='grey65',linewidth=.3)+geom_point(data=test,aes(label,estimate),inherit.aes=FALSE,size=2,colour='#BA6048')+geom_text(data=test,aes(label,.31,label=paste0('P = ',sprintf('%.3f',permutation_p))),inherit.aes=FALSE,size=2.5)+labs(x=NULL,y='Stage-adjusted RSI contrast',title='Observed contrast and age-label null',tag='b')+coord_cartesian(ylim=c(-.32,.35))
+c<-fread(file.path(res,'independent_age_lineage_scores.tsv'));q<-fread(file.path(res,'independent_age_QC.tsv'));labs<-c('Y0a','Y0b','Y4a','Y7a','O0a','O0b','O4a','O7a','Y4b','Y7b','O4b','O4c','O7b');q[,label:=labs];c<-merge(c,q[,.(sample_id,label)],by='sample_id');c[,label:=factor(label,c('Y0a','Y0b','O0a','O0b','Y4a','Y4b','O4a','O4b','O4c','Y7a','Y7b','O7a','O7b'))]
+c[,cell_type:=factor(cell_type,rev(c('myonucleus','FAP','MuSC_myogenic','macrophage','endothelial','pericyte','T_NK','Schwann','neutrophil')))]
+pc<-ggplot(c,aes(label,cell_type,fill=log10(n_cells+1)))+geom_tile(colour='white',linewidth=.25)+geom_point(data=c[n_cells>=20],shape=21,size=.75,fill=NA,colour='black',stroke=.2)+scale_fill_gradient(low='#F2F5F6',high='#376B91',name='log10(n+1)')+scale_y_discrete(labels=function(s)gsub('_',' ',s))+scale_x_discrete(drop=FALSE)+labs(x='Independent age-cohort libraries',y=NULL,title='Lineage recovery in GSE180225',tag='c')+theme(axis.text.x=element_text(angle=90,hjust=1,vjust=.5,size=6),axis.text.y=element_text(size=6.5),legend.position='bottom')
+d<-fread(file.path(res,'independent_age_myonuclear_phase.tsv'));d[,age_class:=factor(age_class,c('young','old'))]
+pd<-ggplot(d,aes(factor(time_days),pooled_phase,colour=age_class))+geom_point(position=position_jitterdodge(jitter.width=.1,dodge.width=.35,seed=2),size=2)+scale_colour_manual(values=c(young=unname(ages['young']),old=unname(ages['geriatric'])),labels=c('Young (4–8 mo)','Aged (24–28 mo)'))+labs(x='Days after barium chloride',y='Myonuclear expression phase',title='Held-out age comparison, 13 libraries',tag='d')+annotate('text',x=2,y=.725,label='Age contrast = −0.0083; exact P = 0.672',size=2.5)+coord_cartesian(ylim=c(.35,.75))+theme(legend.position='top',legend.text=element_text(size=6.5))
+p<-(pa+pb)/(pc+pd)+plot_layout(heights=c(1,1.05))
+savefig(p,"SupplementaryFigure8",h=6.2)
+}

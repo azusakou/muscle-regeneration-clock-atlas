@@ -84,7 +84,7 @@ write_table(rbindlist(all,idcol="variant"),"RSI_sensitivity_samples")
 write_table(rbindlist(lineage,idcol="variant"),"phase_anchor_sensitivity")
 
 aggregate_units <- function(d) d[is.finite(RSI),.(RSI=weighted.mean(RSI,n_lineages),
- dispersion=weighted.mean(dispersion,n_lineages),n_captures=.N,n_lineages=min(n_lineages)),
+ n_captures=.N,n_lineages=min(n_lineages)),
  by=.(unit,age_class,time_days)]
 age <- aggregate_units(all$injury_crossfit[injury_model_std=="NTX"])
 write_table(age,"age_RSI_biological_units")
@@ -99,8 +99,7 @@ for(tt in sort(unique(age$time_days))) {
  a<-age[time_days==tt & age_class=="young",RSI];b<-age[time_days==tt & age_class=="geriatric",RSI]
  if(!length(a)||!length(b))next
  e<-exact(a,b)
- boots<-replicate(10000,mean(sample(b,length(b),TRUE))-mean(sample(a,length(a),TRUE)))
- ci<-if(min(length(a),length(b))>=2)quantile(boots,c(.025,.975)) else c(NA,NA)
+ ci<-c(NA_real_,NA_real_)
  contrasts[[as.character(tt)]]<-data.table(time_days=tt,n_young=length(a),n_geriatric=length(b),
   effect=e[1],lower=ci[1],upper=ci[2],exact_p=e[2],n_allocations=e[3],
   young_sd=sd(a),geriatric_sd=sd(b))
@@ -255,22 +254,9 @@ z<-rbindlist(lapply(names(pairs),function(nm){
 }))
 fwrite(z,file.path(root,'results/age_pairing_sensitivity.tsv'),sep='\t');print(z[,.(min_effect=min(effect),max_effect=max(effect)),by=time_days])
 
-suppressPackageStartupMessages(library(data.table));set.seed(20261125)
-d<-fread(file.path(root,'results/external_reference_RSI.tsv'))[is.finite(RSI)]
-d<-d[,.(RSI=weighted.mean(RSI,n_lineages)),by=.(unit,age_class,time_days)]
-d<-d[time_days>0];d[,age_class:=factor(age_class,c('young','old','geriatric'))]
-X<-model.matrix(~factor(time_days)+age_class,d);X0<-model.matrix(~factor(time_days),d);y<-d$RSI
-calc<-function(ages) {xx<-model.matrix(~factor(d$time_days)+factor(ages,levels=c('young','old','geriatric')));fit<-lm.fit(xx,y);rss<-sum(fit$residuals^2);f<-((sum(lm.fit(X0,y)$residuals^2)-rss)/2)/(rss/(length(y)-ncol(xx)));c(f=unname(f),old=unname(fit$coefficients[ncol(xx)-1]),geriatric=unname(fit$coefficients[ncol(xx)]))}
-obs<-calc(as.character(d$age_class));strata<-split(seq_len(nrow(d)),d$time_days)
-null<-replicate(10000,{a<-as.character(d$age_class);for(ii in strata)a[ii]<-sample(a[ii]);calc(a)})
-p<-c((1+sum(null[1,]>=obs[1]-1e-12))/10001,(1+rowSums(abs(null[2:3,,drop=FALSE])>=abs(obs[2:3])-1e-12))/10001)
-r<-data.table(contrast=c('omnibus_age','old_minus_young','geriatric_minus_young'),estimate=obs,permutation_p=p,n_units=nrow(d),permutations=10000)
-r[,holm_p:=p.adjust(permutation_p,'holm')]
-fwrite(d,file.path(root,'results/all_age_external_reference_units.tsv'),sep='\t');fwrite(r,file.path(root,'results/all_age_external_reference_tests.tsv'),sep='\t');print(r)
-
 library(data.table)
 p<-paste0(file.path(root,'results'),'/')
 a<-fread(paste0(p,'age_RSI_inference.tsv'));r<-fread(paste0(p,'age_reference_refit_tests.tsv'));q<-fread(paste0(p,'age_pairing_sensitivity.tsv'))[,.(pairing_lower=min(effect),pairing_upper=max(effect)),by=time_days]
 a<-merge(a,r,by='time_days');a<-merge(a,q,by='time_days');a[,`:=`(exact_p=exact_refit_p,holm_p=holm_refit_p,lower=pairing_lower,upper=pairing_upper,uncertainty_type='range_across_three_TA_pairings')]
-a[,c('exact_refit_p','holm_refit_p','pairing_lower','pairing_upper'):=NULL]
+a[,n_allocations:=n_allocations.y];a[,c('exact_refit_p','holm_refit_p','pairing_lower','pairing_upper','n_allocations.x','n_allocations.y'):=NULL]
 fwrite(a,paste0(p,'age_RSI_inference.tsv'),sep='\t');print(a)

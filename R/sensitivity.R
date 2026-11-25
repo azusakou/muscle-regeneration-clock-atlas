@@ -122,17 +122,35 @@ tech<-rbindlist(lapply(c("n_cells","n_lineages"),function(v) {
  data.table(variable=v,n=nrow(ntx),rho=unname(ct$estimate),p=ct$p.value)
 }));write_table(tech,"RSI_recovery_associations")
 
-# Age-associated lineage departures at the two within-accession matched times.
-d<-lineage$injury_crossfit[injury_model_std=="NTX" & time_days %in% c(1,3.5)]
-d<-d[,.(deviation=weighted.mean(deviation,1-exp(-n_cells/50))),by=.(unit,age_class,time_days,cell_type)]
-lr<-list()
-for(ct in unique(d$cell_type))for(tt in c(1,3.5)) {
- a<-d[cell_type==ct & time_days==tt & age_class=="young" & is.finite(deviation),deviation]
- b<-d[cell_type==ct & time_days==tt & age_class=="geriatric" & is.finite(deviation),deviation]
- if(!length(a)||!length(b))next
- e<-exact(a,b);lr[[paste(ct,tt)]]<-data.table(cell_type=ct,time_days=tt,n_young=length(a),n_geriatric=length(b),difference=e[1],exact_p=e[2])
+# Reference-refitted lineage comparisons at the within-accession matched times.
+refit_lineage_age_tests <- function(x,root) {
+ group_deviations<-function(xx,tt) {
+  d<-calculate(xx)$lineages[injury_model_std=='NTX' & time_days==tt & is.finite(deviation)]
+  d[,.(deviation=weighted.mean(deviation,1-exp(-n_cells/50))),by=.(unit,age_class,cell_type)]
+ }
+ obs<-list()
+ for(tt in c(1,3.5)) {
+  um<-unique(x[injury_model_std=='NTX' & time_days==tt & age_class%in%c('young','geriatric'),.(unit,age_class)])
+  ids<-um$unit;n<-sum(um$age_class=='young');alloc<-combn(ids,n,simplify=FALSE)
+  a<-group_deviations(x,tt)
+  effects<-function(z)z[,.(difference=if(any(age_class=='young')&&any(age_class=='geriatric')) mean(deviation[age_class=='geriatric'])-mean(deviation[age_class=='young']) else NA_real_,n_young=sum(age_class=='young'),n_geriatric=sum(age_class=='geriatric')),by=cell_type]
+  observed<-effects(a)[n_young>0 & n_geriatric>0];observed[,time_days:=tt]
+  nul<-rbindlist(lapply(seq_along(alloc),function(k){
+   xx<-copy(x);xx[unit%in%ids,age_class:=ifelse(unit%in%alloc[[k]],'young','geriatric')]
+   e<-effects(group_deviations(xx,tt));e[,allocation:=k];e
+  }),fill=TRUE)
+  for(ct in observed$cell_type) {
+   v<-merge(data.table(allocation=seq_along(alloc)),nul[cell_type==ct,.(allocation,difference)],by='allocation',all.x=TRUE)$difference
+   observed[cell_type==ct,`:=`(exact_p=if(all(is.finite(v)))mean(abs(v)>=abs(difference)-1e-12)else NA_real_,n_allocations=length(v),n_invalid=sum(!is.finite(v)))]
+  }
+  obs[[as.character(tt)]]<-observed
+ }
+ z<-rbindlist(obs);z[,BH_q:=p.adjust(exact_p,'BH',n=nrow(z))]
+ setcolorder(z,c('cell_type','time_days','n_young','n_geriatric','difference','exact_p','BH_q','n_allocations','n_invalid'))
+ fwrite(z,file.path(root,'results/lineage_age_comparisons.tsv'),sep='\t')
+ print(z);invisible(z)
 }
-lr<-rbindlist(lr);lr[,BH_q:=p.adjust(exact_p,"BH")];write_table(lr,"lineage_age_comparisons")
+refit_lineage_age_tests(x,root)
 
 # Uncertainty at the independent-study level for the original grouped benchmark.
 m<-fread(file.path(input,"validation_metrics.tsv"))[validation=="leave_study_out"]
